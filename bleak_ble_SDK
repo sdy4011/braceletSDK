@@ -52,7 +52,7 @@ class BleakProfile():
         ourdevice = None
         for dev in devices:
             for uuid in dev.metadata.get("uuids"):
-                print("got service uuid through scan :{}".format(uuid))
+                print("get service uuid through scan :{}".format(uuid))
                 alldevies.append([i, dev.name, dev.address, dev.rssi])
                 if uuid == self.scan_service_uuid:
                     print("uuid:{}".format(uuid))
@@ -85,9 +85,9 @@ class BleakProfile():
         print("connect to mac :{}".format(device))
         self.client = BleakClient(device,disconnected_callback=disconnected_callback)
         await self.client.connect()
-        print("connect success..")
+        print("connected successfully..")
 
-        fun.emit("connected successfully！")
+        #fun.emit("connected successfully！")
         self.connected = 1
         for s in self.client.services:
             print("service :{} ".format(s))
