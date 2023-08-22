@@ -1,0 +1,102 @@
+import struct
+import threading
+import time
+from typing import Union
+
+from bleak import BleakGATTCharacteristic, BLEDevice
+
+from bleak_ble_SDK import BleakProfile
+import bleak_ble_SDK
+import asyncio
+import queue
+
+sEMG_queue = queue.Queue(1000)
+repeat_times = 16
+packet_num = 0
+start_time = 0
+receive_state = False
+searched_devices = None
+test_profile = None
+
+def sEMG_data_process_thread():
+    """
+    start a thread for processing the data received to reduce processing time and speed up IO
+    :param self:
+    :return:
+    """
+    global packet_num
+    global start_time
+    global receive_state
+    while True:
+        data_bytes = sEMG_queue.get()  # 阻塞
+        if data_bytes:
+            data_unpacked = struct.iter_unpack("B", data_bytes)
+            data = []
+            for db in data_unpacked:
+                data.append(db[0])
+            if receive_state:##start receiving
+                if start_time == 0:
+                    start_time = time.time()
+                packet_num+=1
+                if packet_num % 30 == 0:
+                    period = time.time()-start_time
+                    sample_rate = 30 * repeat_times / period  # 16 means repeat times in one packet
+                    byte_rate = 30 * len(data_bytes) / period
+                    print('----- sEMG sample_rate:{0}, byte_rate:{1}'.format(sample_rate, byte_rate))
+                    start_time  = time.time()
+                    packet_num = 0
+
+
+def create_sEMG_process_thread():
+    t = threading.Thread(target=sEMG_data_process_thread, args=())
+    t.setDaemon(True)
+    t.start()
+
+
+def sEMG_notification_handler(characteristic: BleakGATTCharacteristic, data_bytes: bytearray):
+    """
+    肌电数据实时获取的函数
+    :param
+    :return:
+    """
+    # if sEMG_queue.full():
+    #     _ = sEMG_queue.get()
+    sEMG_queue.put(data_bytes)
+
+async def search_bracelet(profile:BleakProfile):
+
+    task_sEMG = asyncio.create_task(profile.scan(5))
+    global searched_devices
+    searched_devices = await task_sEMG
+    if searched_devices[1] is None:
+        print('No bracelet was found')
+    elif searched_devices[0] is None:
+        print("bracelet is not found")
+    else:
+        print('{0:<1}: {1} {2:<18} Rssi={3:<3}'.format(*searched_devices[0]))
+
+def fun():
+    pass
+
+
+
+async def main():
+    global receive_state
+    global test_profile
+    create_sEMG_process_thread()
+    test_profile = BleakProfile(bleak_ble_SDK.service_uuid_2, bleak_ble_SDK.service_uuid_2, bleak_ble_SDK.chararcteristic_uuid_2,
+                          bleak_ble_SDK.cmd_uuid_2)
+    test_profile.notification_handler = sEMG_notification_handler
+    await search_bracelet(test_profile)
+    for i in searched_devices[0]:
+        print(i)
+    print("input bracelet index:")
+    addr = searched_devices[0][2]
+    receive_state = True
+    await test_profile.connect(addr, fun)
+
+
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
