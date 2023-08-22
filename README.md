@@ -1,2 +1,2 @@
 # braceletSDK
-our bracelet SDK for Python3
+Our bracelet SDK for Python3
