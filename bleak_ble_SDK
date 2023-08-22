@@ -1,0 +1,126 @@
+import asyncio
+import queue
+import threading
+from typing import Union
+
+from bleak import BleakScanner
+from bleak.backends.service import BleakGATTService
+from bleak.backends.device import BLEDevice
+from bleak import BleakClient
+
+service_uuid_2 = '19b10000-e8f2-537e-4f6c-d104768a1214'
+chararcteristic_uuid_2 = '19b10001-e8f2-537e-4f6c-d104768a1214'
+cmd_uuid_2 = '19b10002-e8f2-537e-4f6c-d104768a1214'
+
+
+ConnectState = dict(
+    Connected=0,
+)
+
+
+class BleakProfile():
+    def __init__(self,scan_service_uuid, notification_service_uuid,notification_characteristic_uuid, cmd_uuid):
+        self.scan_service_uuid = scan_service_uuid
+        self.notification_service_uuid = notification_service_uuid
+        self.notification_characteristic_uuid = notification_characteristic_uuid
+        self.cmd_uuid =cmd_uuid
+        self.client = None
+        self.cmdCharacteristic = None
+        self.notifyCharacteristic = None
+        self.timer = None
+        self.cmdMap = {}
+        self.mtu = None
+        self.cmdForTimeout = -1
+        self.incompleteCmdRespPacket = []
+        self.lastIncompleteCmdRespPacketId = 0
+        self.incompleteNotifPacket = []
+        self.lastIncompleteNotifPacketId = 0
+        self.onData = None
+        self.lock = threading.Lock()
+        self.send_queue = queue.Queue(maxsize=20)
+        self.receive_time = 0
+        self.start_time = 0
+        self.notification_handler = None ##必须在connect之前赋予函数
+        self.connected = 0
+
+
+    async def scan(self,timeout:float):
+        scanner = BleakScanner()
+        devices = await scanner.discover(timeout=timeout)
+        alldevies = []
+        i = 1
+        ourdevice = None
+        for dev in devices:
+            for uuid in dev.metadata.get("uuids"):
+                print("got service uuid through scan :{}".format(uuid))
+                alldevies.append([i, dev.name, dev.address, dev.rssi])
+                if uuid == self.scan_service_uuid:
+                    print("uuid:{}".format(uuid))
+                    ourdevice = [i, dev.name, dev.address, dev.rssi]
+                    i += 1
+        return ourdevice,alldevies
+
+    def set_notification_handler(self,fn):
+        self.notification_handler = fn
+
+    def getCharacteristic(self,service: BleakGATTService, uuid):
+        """
+        get characteristics
+        :param client:
+        :return:
+        """
+        return service.get_characteristic(uuid)
+
+
+    async def connect(self,device: Union[BLEDevice,str],fun):
+        """
+        :param device:BLEDevice or mac
+        :param fun: function for callback
+        :return:
+        """
+        disconnected_event = asyncio.Event()
+        def disconnected_callback(client):
+            print("Disconnected callback called!")
+            disconnected_event.set()
+        print("connect to mac :{}".format(device))
+        self.client = BleakClient(device,disconnected_callback=disconnected_callback)
+        await self.client.connect()
+        print("connect success..")
+
+        fun.emit("connected successfully！")
+        self.connected = 1
+        for s in self.client.services:
+            print("service :{} ".format(s))
+
+        notify_service = self.client.services.get_service(self.notification_service_uuid)
+        self.notifyCharacteristic = self.getCharacteristic(notify_service, self.notification_characteristic_uuid)
+        print("notify cha:{}".format(self.notifyCharacteristic.handle))
+        self.cmdCharacteristic = self.getCharacteristic(notify_service, self.cmd_uuid)
+
+
+    async def setDataType(self,flag,wristband=0):
+        if flag == 1 and wristband == 0:
+            await self.client.write_gatt_char(self.cmdCharacteristic,b"\x01") #our bracelet
+        if flag == 1 and wristband == 1:
+            # await  self.client.write_gatt_char(cmd_uuid,b'?\xf4\x01\xff\x00\x80\x08') ##500 sampling rate，gforce bracelet
+            await self.client.write_gatt_char(self.cmdCharacteristic, b'?\xe8\x03\xff\x00\x80\x08')  ###1000sampling rate
+            await self.client.write_gatt_char(self.cmdCharacteristic, b'O\x80\x00\x00\x00')
+        elif flag == 0 and wristband == 0:
+            await self.client.write_gatt_char(self.cmdCharacteristic,b"\00")
+        else:
+            pass
+
+    async def setNotify(self,flag):
+        if flag:
+            await self.client.start_notify(self.notification_characteristic_uuid,self.notification_handler)
+        else:
+            await self.client.stop_notify(self.notification_service_uuid)
+
+    async def disconnect(self):
+        await self.client.disconnect()
+
+    def setReceiveTime(self, time):
+        self.receive_time = time
+
+    def setStartTime(self, time):
+        self.start_time = time
