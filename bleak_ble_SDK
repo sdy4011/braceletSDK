@@ -1,6 +1,7 @@
 import asyncio
 import queue
 import threading
+import time
 from typing import Union
 
 from bleak import BleakScanner
@@ -96,7 +97,9 @@ class BleakProfile():
         self.notifyCharacteristic = self.getCharacteristic(notify_service, self.notification_characteristic_uuid)
         print("notify cha:{}".format(self.notifyCharacteristic.handle))
         self.cmdCharacteristic = self.getCharacteristic(notify_service, self.cmd_uuid)
-
+        await self.setNotify(1)
+        await self.setDataType(1,0)
+        await disconnected_event.wait()
 
     async def setDataType(self,flag,wristband=0):
         if flag == 1 and wristband == 0:
