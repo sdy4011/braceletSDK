@@ -15,8 +15,7 @@ repeat_times = 16
 packet_num = 0
 start_time = 0
 receive_state = False
-searched_devices = None
-test_profile = None
+searched_devices = []
 
 def sEMG_data_process_thread():
     """
@@ -59,8 +58,8 @@ def sEMG_notification_handler(characteristic: BleakGATTCharacteristic, data_byte
     :param
     :return:
     """
-    # if sEMG_queue.full():
-    #     _ = sEMG_queue.get()
+    if sEMG_queue.full():
+        _ = sEMG_queue.get()
     sEMG_queue.put(data_bytes)
 
 async def search_bracelet(profile:BleakProfile):
@@ -71,29 +70,43 @@ async def search_bracelet(profile:BleakProfile):
     if searched_devices[1] is None:
         print('No bracelet was found')
     elif searched_devices[0] is None:
-        print("bracelet is not found")
+        print("our bracelet is not found")
     else:
-        print('{0:<1}: {1} {2:<18} Rssi={3:<3}'.format(*searched_devices[0]))
+        print("our bracelet is found")
 
-def fun():
-    pass
+def fun(**kwargs):
+    for key,value in kwargs.items():
+        print("{0}:{1}".format(key,value))
 
+def ct(test_profile:BleakProfile,index):
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    addr = searched_devices[0][index][2]
+    loop.run_until_complete(test_profile.connect(addr,fun))
+
+def c_ct(test_profile:BleakProfile,index=0):
+    t = threading.Thread(target=ct,args=(test_profile,index))
+    t.setDaemon(True)
+    t.start()
 
 
 async def main():
     global receive_state
-    global test_profile
     create_sEMG_process_thread()
     test_profile = BleakProfile(bleak_ble_SDK.service_uuid_2, bleak_ble_SDK.service_uuid_2, bleak_ble_SDK.chararcteristic_uuid_2,
                           bleak_ble_SDK.cmd_uuid_2)
     test_profile.notification_handler = sEMG_notification_handler
     await search_bracelet(test_profile)
-    for i in searched_devices[0]:
-        print(i)
-    print("input bracelet index:")
-    addr = searched_devices[0][2]
+    for i,n,a,r in searched_devices[0]:
+        print("index:{0} bracelet name:{1} addr:{2} rssi:{3}".format(i,n,a,r))
+    index = int(input("input bracelet index:"))
+
+    c_ct(test_profile,index-1)
+    await asyncio.sleep(5)
     receive_state = True
-    await test_profile.connect(addr, fun)
+    await asyncio.gather(test_profile.setNotify(1),test_profile.setDataType(1,0))
+    while(True):
+        await asyncio.sleep(1)
 
 
 
