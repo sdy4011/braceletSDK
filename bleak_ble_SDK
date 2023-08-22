@@ -50,14 +50,14 @@ class BleakProfile():
         devices = await scanner.discover(timeout=timeout)
         alldevies = []
         i = 1
-        ourdevice = None
+        ourdevice = []
         for dev in devices:
             for uuid in dev.metadata.get("uuids"):
                 print("get service uuid through scan :{}".format(uuid))
                 alldevies.append([i, dev.name, dev.address, dev.rssi])
                 if uuid == self.scan_service_uuid:
                     print("uuid:{}".format(uuid))
-                    ourdevice = [i, dev.name, dev.address, dev.rssi]
+                    ourdevice.append([i, dev.name, dev.address, dev.rssi])
                     i += 1
         return ourdevice,alldevies
 
@@ -87,18 +87,15 @@ class BleakProfile():
         self.client = BleakClient(device,disconnected_callback=disconnected_callback)
         await self.client.connect()
         print("connected successfully..")
-
-        #fun.emit("connected successfully！")
+        fun(con=True)
         self.connected = 1
-        for s in self.client.services:
-            print("service :{} ".format(s))
+        # for s in self.client.services:
+        #     print("service :{} ".format(s))
 
         notify_service = self.client.services.get_service(self.notification_service_uuid)
         self.notifyCharacteristic = self.getCharacteristic(notify_service, self.notification_characteristic_uuid)
         print("notify cha:{}".format(self.notifyCharacteristic.handle))
         self.cmdCharacteristic = self.getCharacteristic(notify_service, self.cmd_uuid)
-        await self.setNotify(1)
-        await self.setDataType(1,0)
         await disconnected_event.wait()
 
     async def setDataType(self,flag,wristband=0):
